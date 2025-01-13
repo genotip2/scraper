@@ -26,7 +26,7 @@ jobs:
       run: |
         python scripts/scrape_vision.py
 
-    - name: Compress epg.xml to epg.xml.gz
+    - name: Compress epg_vision.xml to epg_vision.xml.gz
       run: |
         gzip -c epg_visiom.xml > epg_vision.xml.gz
 
