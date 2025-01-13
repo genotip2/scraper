@@ -1,0 +1,39 @@
+name: Scrape Vision
+
+on:
+  schedule:
+    - cron: "0 0 * * *"  # Jalankan setiap hari pada pukul 00:00 UTC
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: 3.9
+
+    - name: Install dependencies
+      run: |
+        pip install requests beautifulsoup4 lxml
+
+    - name: Run scraping script
+      run: |
+        python scripts/scrape_vision.py
+
+    - name: Compress epg.xml to epg.xml.gz
+      run: |
+        gzip -c epg_visiom.xml > epg_vision.xml.gz
+
+    - name: Commit and push changes
+      run: |
+        git config --local user.name "github-actions[bot]"
+        git config --local user.email "github-actions[bot]@users.noreply.github.com"
+        git add epg_vision.xml epg_vision.xml.gz
+        git commit -m "Update EPG XMLTV"
+        git push
