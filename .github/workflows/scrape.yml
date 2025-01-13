@@ -24,7 +24,7 @@ jobs:
 
     - name: Run scraping script
       run: |
-        python scrape_to_xmltv.py
+        python scripts/scrape_to_xmltv.py
 
     - name: Commit and push changes
       run: |
