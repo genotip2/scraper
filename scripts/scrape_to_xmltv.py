@@ -33,7 +33,7 @@ if table:
 
 # Mengonversi waktu ke format lengkap dan mengelompokkan program berdasarkan channel
 for program in programs:
-    # Mengubah format waktu dari 'YYYY-MM-DD HH:MM' menjadi 'YYYYMMDDHHMMSS +0000'
+    # Pastikan hanya satu tanggal yang ditambahkan, dan format waktu sesuai
     program["time"] = datetime.strptime(f"2025-01-12 {program['time']}", "%Y-%m-%d %H:%M").strftime("%Y%m%d%H%M%S +0000")
 
 # Mengelompokkan program berdasarkan channel
