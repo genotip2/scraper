@@ -3,7 +3,7 @@ from bs4 import BeautifulSoup
 import xml.etree.ElementTree as ET
 from datetime import datetime
 
-# URL target yang diperbarui
+# URL target
 url = "https://epg.pw/areas/id/epg.html?lang=en&timezone=QXNpYS9KYWthcnRh"
 
 # Mengambil data dari URL
@@ -15,12 +15,14 @@ soup = BeautifulSoup(response.text, 'html.parser')
 
 # Parsing data dari tabel
 programs = []
+channels = {}  # Menyimpan informasi channel
 table = soup.find("table", class_="table is-bordered is-striped")
 if table:
     for row in table.find_all("tr"):
         cells = row.find_all("td")
         if len(cells) > 1:  # Setiap baris memiliki beberapa kolom
             channel_name = cells[0].text.strip()
+            channel_id = channel_name.replace(" ", "")  # Channel id tanpa spasi
             for cell in cells[1:]:
                 time_tag = cell.find("span", class_="tag is-primary")
                 title = cell.get_text(strip=True).replace(time_tag.text.strip(), "") if time_tag else ""
@@ -32,23 +34,29 @@ if table:
 
                 programs.append({
                     "channel": channel_name,
+                    "channel_id": channel_id,
                     "time": time,
                     "title": title,
                 })
+                
+                # Menyimpan informasi channel jika belum ada
+                if channel_id not in channels:
+                    channels[channel_id] = {
+                        "display_name": channel_name,
+                        "icon": ""  # Tambahkan URL ikon jika ada
+                    }
 
 # Membuat struktur XMLTV
 tv = ET.Element("tv")
 
-# Menambahkan channel ke dalam XML dengan URL yang diperbarui
-channel_id = "ZhejiangSatelliteTV.cn"  # ID channel yang digunakan
-channel = ET.SubElement(tv, "channel", id=channel_id)
-display_name = ET.SubElement(channel, "display-name")
-display_name.text = "Zhejiang Satellite TV"
-icon = ET.SubElement(channel, "icon", src="https://i.imgur.com/NFFQNhq.png")
-url = ET.SubElement(channel, "url")
-url.text = "https://epg.pw/areas/id/epg.html?lang=en&timezone=QXNpYS9KYWthcnRh"  # URL yang diperbarui
-
-# Menambahkan program-program
+# Membuat elemen <channel> untuk setiap channel
+for channel_id, channel_info in channels.items():
+    channel = ET.SubElement(tv, "channel", id=channel_id)
+    display_name = ET.SubElement(channel, "display-name")
+    display_name.text = channel_info["display_name"]
+    icon = ET.SubElement(channel, "icon", src=channel_info["icon"])
+    
+# Membuat elemen <programme> untuk setiap program
 for i, program in enumerate(programs):
     # Menggunakan format waktu yang telah diperbarui (jika perlu)
     try:
@@ -70,15 +78,19 @@ for i, program in enumerate(programs):
         # Jika ini adalah program terakhir, set waktu stop ke waktu yang sama
         stop_str = start_str
 
-    # Menambahkan elemen programme dengan channel yang sesuai
-    programme = ET.SubElement(tv, "programme", start=start_str, stop=stop_str, channel=channel_id)
+    programme = ET.SubElement(tv, "programme", start=start_str, stop=stop_str, channel=program["channel_id"])
     title = ET.SubElement(programme, "title", lang="en")
     title.text = program["title"]
 
 # Menyimpan ke file XML dalam satu baris per elemen
 with open("epg.xml", "w", encoding="utf-8") as f:
     for programme in tv:
-        if programme.tag == "programme":
+        if programme.tag == "channel":
+            channel_id = programme.attrib["id"]
+            display_name = programme.find("display-name").text
+            icon_src = programme.find("icon").attrib.get("src", "")
+            f.write(f'<channel id="{channel_id}"><display-name>{display_name}</display-name><icon src="{icon_src}"/></channel>\n')
+        elif programme.tag == "programme":
             start = programme.attrib["start"]
             stop = programme.attrib["stop"]
             channel = programme.attrib["channel"]
