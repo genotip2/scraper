@@ -26,10 +26,6 @@ jobs:
       run: |
         python scripts/scrape_vision.py
 
-    - name: Compress epg_vision.xml to epg_vision.xml.gz
-      run: |
-        gzip -c epg_visiom.xml > epg_vision.xml.gz
-
     - name: Commit and push changes
       run: |
         git config --local user.name "github-actions[bot]"
