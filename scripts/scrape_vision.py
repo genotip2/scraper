@@ -83,8 +83,8 @@ for program in programs:
 
 # Simpan ke file XML
 tree = ET.ElementTree(tv)
-with open("epg.xml", "wb") as f:
+with open("epg_vision.xml", "wb") as f:
     f.write(b'<?xml version="1.0" encoding="UTF-8"?>\n')
     tree.write(f, encoding="utf-8", xml_declaration=False)
 
-print("EPG berhasil disimpan ke epg.xml!")
+print("EPG berhasil disimpan ke epg_vision.xml!")
