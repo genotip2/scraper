@@ -44,6 +44,9 @@ if table:
 
                     # Gabungkan tanggal dan waktu
                     time = datetime.combine(current_date, program_time).strftime("%Y-%m-%d %H:%M")
+                else:
+                    # Jika waktu tidak ditemukan, asumsikan program dimulai pada waktu default
+                    time = datetime.combine(current_date, datetime.min.time()).strftime("%Y-%m-%d %H:%M")
 
                 programs.append({
                     "channel": channel_name,
