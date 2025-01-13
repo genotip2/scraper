@@ -4,7 +4,7 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 
 # URL target
-url = "https://epg.pw/areas/id/epg.html?lang=en"
+url = "https://epg.pw/areas/id/epg.html?lang=en&timezone=QXNpYS9KYWthcnRh"
 
 # Mengambil data dari URL
 headers = {
