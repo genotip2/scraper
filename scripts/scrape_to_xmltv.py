@@ -35,15 +35,25 @@ if table:
                 time = time_tag.text.strip() if time_tag else ""
                 
                 if time:
-                    # Deteksi perubahan hari berdasarkan waktu
-                    program_time = datetime.strptime(time, "%H:%M").time()
-                    if last_time and program_time < last_time:
-                        # Jika waktu lebih kecil dari program sebelumnya, ganti ke hari berikutnya
-                        current_date += timedelta(days=1)
-                    last_time = program_time  # Perbarui waktu terakhir
+                    # Jika waktu sudah mencakup tanggal, gunakan format "%Y-%m-%d %H:%M"
+                    try:
+                        # Cek apakah waktu sudah mencakup tanggal
+                        if len(time.split(" ")) > 1:  # Format sudah mencakup tanggal
+                            program_time = datetime.strptime(time, "%Y-%m-%d %H:%M")
+                        else:  # Format hanya waktu
+                            program_time = datetime.strptime(time, "%H:%M").replace(year=current_date.year, month=current_date.month, day=current_date.day)
+                        
+                        # Gabungkan tanggal dan waktu
+                        time = program_time.strftime("%Y-%m-%d %H:%M")
 
-                    # Gabungkan tanggal dan waktu
-                    time = datetime.combine(current_date, program_time).strftime("%Y-%m-%d %H:%M")
+                        # Deteksi perubahan hari berdasarkan waktu
+                        if last_time and program_time.time() < last_time.time():
+                            current_date += timedelta(days=1)
+                        
+                        last_time = program_time  # Perbarui waktu terakhir
+                    except ValueError as e:
+                        print(f"Error parsing time: {time} - {e}")
+                        continue
                 else:
                     # Jika waktu tidak ditemukan, asumsikan program dimulai pada waktu default
                     time = datetime.combine(current_date, datetime.min.time()).strftime("%Y-%m-%d %H:%M")
