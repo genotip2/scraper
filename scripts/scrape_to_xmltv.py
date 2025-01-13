@@ -1,33 +1,30 @@
-import requests
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.service import Service
 from bs4 import BeautifulSoup
-import xml.etree.ElementTree as ET
 
-# URL target
+# Konfigurasi Selenium
+service = Service("path/to/chromedriver")  # Ganti dengan path ke chromedriver Anda
+driver = webdriver.Chrome(service=service)
+
+# Buka URL target
 url = "https://epg.pw/areas/id/epg.html?lang=en"
+driver.get(url)
 
-# Mengambil data dari URL
-response = requests.get(url)
-soup = BeautifulSoup(response.text, 'html.parser')
+# Tunggu halaman selesai dimuat (opsional, jika ada waktu tunggu khusus)
+driver.implicitly_wait(10)
 
-# Parsing data (disesuaikan dengan struktur HTML di halaman target)
+# Ambil HTML setelah JavaScript selesai
+html = driver.page_source
+driver.quit()
+
+# Parsing HTML dengan BeautifulSoup
+soup = BeautifulSoup(html, 'html.parser')
+
+# Lanjutkan parsing seperti sebelumnya
 programs = []
-for item in soup.find_all("div", class_="program-item"):  # Ganti dengan elemen HTML yang sesuai
+for item in soup.find_all("div", class_="program-item"):  # Sesuaikan elemen HTML
     time = item.find("div", class_="time").text.strip()
     title = item.find("div", class_="title").text.strip()
     description = item.find("div", class_="description").text.strip()
     programs.append({"time": time, "title": title, "description": description})
-
-# Membuat struktur XMLTV
-tv = ET.Element("tv")
-for program in programs:
-    channel = ET.SubElement(tv, "programme", start=program["time"])
-    title = ET.SubElement(channel, "title")
-    title.text = program["title"]
-    desc = ET.SubElement(channel, "desc")
-    desc.text = program["description"]
-
-# Menyimpan ke file XML
-tree = ET.ElementTree(tv)
-tree.write("epg.xml", encoding="utf-8", xml_declaration=True)
-
-print("EPG berhasil disimpan ke epg.xml!")
