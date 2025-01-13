@@ -1,30 +1,44 @@
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.service import Service
+import requests
 from bs4 import BeautifulSoup
+import xml.etree.ElementTree as ET
 
-# Konfigurasi Selenium
-service = Service("path/to/chromedriver")  # Ganti dengan path ke chromedriver Anda
-driver = webdriver.Chrome(service=service)
-
-# Buka URL target
+# URL target
 url = "https://epg.pw/areas/id/epg.html?lang=en"
-driver.get(url)
 
-# Tunggu halaman selesai dimuat (opsional, jika ada waktu tunggu khusus)
-driver.implicitly_wait(10)
+# Mengambil data dari URL
+headers = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+}
+response = requests.get(url, headers=headers)
+soup = BeautifulSoup(response.text, 'html.parser')
 
-# Ambil HTML setelah JavaScript selesai
-html = driver.page_source
-driver.quit()
-
-# Parsing HTML dengan BeautifulSoup
-soup = BeautifulSoup(html, 'html.parser')
-
-# Lanjutkan parsing seperti sebelumnya
+# Parsing data dari tabel
 programs = []
-for item in soup.find_all("div", class_="program-item"):  # Sesuaikan elemen HTML
-    time = item.find("div", class_="time").text.strip()
-    title = item.find("div", class_="title").text.strip()
-    description = item.find("div", class_="description").text.strip()
-    programs.append({"time": time, "title": title, "description": description})
+table = soup.find("table", class_="table is-bordered is-striped")
+if table:
+    for row in table.find_all("tr"):
+        cells = row.find_all("td")
+        if len(cells) > 1:  # Setiap baris memiliki beberapa kolom
+            channel_name = cells[0].text.strip()
+            for cell in cells[1:]:
+                time_tag = cell.find("span", class_="tag is-primary")
+                title = cell.get_text(strip=True).replace(time_tag.text.strip(), "") if time_tag else ""
+                time = time_tag.text.strip() if time_tag else ""
+                programs.append({
+                    "channel": channel_name,
+                    "time": time,
+                    "title": title,
+                })
+
+# Membuat struktur XMLTV
+tv = ET.Element("tv")
+for program in programs:
+    channel = ET.SubElement(tv, "programme", start=program["time"], channel=program["channel"])
+    title = ET.SubElement(channel, "title")
+    title.text = program["title"]
+
+# Menyimpan ke file XML
+tree = ET.ElementTree(tv)
+tree.write("epg.xml", encoding="utf-8", xml_declaration=True)
+
+print("EPG berhasil disimpan ke epg.xml!")
