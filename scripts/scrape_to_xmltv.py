@@ -1,7 +1,6 @@
 import requests
 from bs4 import BeautifulSoup
 import xml.etree.ElementTree as ET
-from xml.dom import minidom
 
 # URL target
 url = "https://epg.pw/areas/id/epg.html?lang=en"
@@ -38,15 +37,12 @@ for program in programs:
     title = ET.SubElement(channel, "title")
     title.text = program["title"]
 
-# Memformat XML agar lebih rapi
-def prettify_xml(element):
-    rough_string = ET.tostring(element, encoding="utf-8", method="xml")
-    reparsed = minidom.parseString(rough_string)
-    return reparsed.toprettyxml(indent="  ")
-
-# Menyimpan ke file XML
-formatted_xml = prettify_xml(tv)
+# Menyimpan ke file XML dalam satu baris per elemen
 with open("epg.xml", "w", encoding="utf-8") as f:
-    f.write(formatted_xml)
+    for programme in tv:
+        start = programme.attrib["start"]
+        channel = programme.attrib["channel"]
+        title = programme.find("title").text
+        f.write(f'<programme start="{start}" channel="{channel}"><title>{title}</title></programme>\n')
 
 print("EPG berhasil disimpan ke epg.xml!")
