@@ -113,25 +113,20 @@ with open("epg.xml", "w", encoding="utf-8") as f:
     f.write('<?xml version="1.0" encoding="UTF-8"?>\n')
     f.write('<tv>\n')
     
-    # Menulis elemen channel
+    # Menulis elemen channel dalam satu baris
     for programme in tv:
         if programme.tag == "channel":
             channel_id = programme.attrib["id"]
             display_name = programme.find("display-name").text
             icon_src = programme.find("icon").attrib.get("src", "")
-            f.write(f'  <channel id="{channel_id}">\n')
-            f.write(f'    <display-name>{display_name}</display-name>\n')
-            f.write(f'    <icon src="{icon_src}"/>\n')
-            f.write('  </channel>\n')
+            f.write(f'  <channel id="{channel_id}"><display-name>{display_name}</display-name><icon src="{icon_src}"/></channel>\n')
         elif programme.tag == "programme":
-            # Menulis elemen programme
+            # Menulis elemen programme dalam satu baris
             start = programme.attrib["start"]
             stop = programme.attrib["stop"]
             channel = programme.attrib["channel"]
             title = programme.find("title").text
-            f.write(f'  <programme start="{start}" stop="{stop}" channel="{channel}">\n')
-            f.write(f'    <title lang="en">{title}</title>\n')
-            f.write('  </programme>\n')
+            f.write(f'  <programme start="{start}" stop="{stop}" channel="{channel}"><title lang="en">{title}</title></programme>\n')
 
     # Menutup tag <tv>
     f.write('</tv>\n')
