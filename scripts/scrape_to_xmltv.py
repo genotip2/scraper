@@ -1,7 +1,7 @@
 import requests
 from bs4 import BeautifulSoup
 import xml.etree.ElementTree as ET
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # URL target
 url = "https://epg.pw/areas/id/epg.html?lang=en"
@@ -38,7 +38,7 @@ if table:
 
 # Membuat struktur XMLTV
 tv = ET.Element("tv")
-for program in programs:
+for i, program in enumerate(programs):
     # Menggunakan format waktu yang telah diperbarui (jika perlu)
     try:
         start_time = datetime.strptime(program["time"], "%Y-%m-%d %H:%M")
@@ -47,7 +47,19 @@ for program in programs:
         # Jika tidak ada tanggal di waktu
         start_str = f"20250112{program['time'].replace(':', '')}00 +0000"  # Asumsi tanggal default
 
-    channel = ET.SubElement(tv, "programme", start=start_str, channel=program["channel"])
+    # Menentukan waktu stop untuk program sebelumnya (dari start program berikutnya)
+    if i < len(programs) - 1:
+        next_program = programs[i + 1]
+        try:
+            next_start_time = datetime.strptime(next_program["time"], "%Y-%m-%d %H:%M")
+            stop_str = next_start_time.strftime("%Y%m%d%H%M%S +0000")
+        except ValueError:
+            stop_str = f"20250112{next_program['time'].replace(':', '')}00 +0000"
+    else:
+        # Jika ini adalah program terakhir, set waktu stop ke waktu yang sama
+        stop_str = start_str
+
+    channel = ET.SubElement(tv, "programme", start=start_str, stop=stop_str, channel=program["channel"])
     title = ET.SubElement(channel, "title")
     title.text = program["title"]
 
@@ -55,8 +67,9 @@ for program in programs:
 with open("epg.xml", "w", encoding="utf-8") as f:
     for programme in tv:
         start = programme.attrib["start"]
+        stop = programme.attrib["stop"]
         channel = programme.attrib["channel"]
         title = programme.find("title").text
-        f.write(f'<programme start="{start}" channel="{channel}"><title>{title}</title></programme>\n')
+        f.write(f'<programme start="{start}" stop="{stop}" channel="{channel}"><title>{title}</title></programme>\n')
 
 print("EPG berhasil disimpan ke epg.xml!")
