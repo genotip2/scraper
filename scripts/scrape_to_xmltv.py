@@ -1,6 +1,7 @@
 import requests
 from bs4 import BeautifulSoup
 import xml.etree.ElementTree as ET
+from datetime import datetime
 
 # URL target
 url = "https://epg.pw/areas/id/epg.html?lang=en"
@@ -30,19 +31,45 @@ if table:
                     "title": title,
                 })
 
+# Mengonversi waktu ke format lengkap dan mengelompokkan program berdasarkan channel
+for program in programs:
+    program["time"] = datetime.strptime(program["time"], "%H:%M").strftime("20250112%H%M%S +0000")
+
+# Mengelompokkan program berdasarkan channel
+channel_programs = {}
+for program in programs:
+    channel = program["channel"]
+    if channel not in channel_programs:
+        channel_programs[channel] = []
+    channel_programs[channel].append(program)
+
 # Membuat struktur XMLTV
 tv = ET.Element("tv")
-for program in programs:
-    channel = ET.SubElement(tv, "programme", start=program["time"], channel=program["channel"])
-    title = ET.SubElement(channel, "title")
-    title.text = program["title"]
 
-# Menyimpan ke file XML dalam satu baris per elemen
+# Membuat elemen <channel>
+channel_ids = {}
+for channel_name, program_list in channel_programs.items():
+    channel_id = channel_name.replace(" ", "").replace("&", "and")
+    channel_ids[channel_name] = channel_id
+    channel_elem = ET.SubElement(tv, "channel", id=channel_id)
+    ET.SubElement(channel_elem, "display-name").text = channel_name
+    ET.SubElement(channel_elem, "icon", src="https://i.imgur.com/NFFQNhq.png")
+    ET.SubElement(channel_elem, "url").text = "https://firstmedia.com"
+
+# Membuat elemen <programme>
+for channel_name, program_list in channel_programs.items():
+    for i, program in enumerate(program_list):
+        start_time = program["time"]
+        stop_time = program_list[i + 1]["time"] if i + 1 < len(program_list) else ""
+        channel_id = channel_ids[channel_name]
+        programme_elem = ET.SubElement(tv, "programme", start=start_time, stop=stop_time, channel=channel_id)
+        title_elem = ET.SubElement(programme_elem, "title", lang="en")
+        title_elem.text = program["title"]
+
+# Menyimpan ke file XML
 with open("epg.xml", "w", encoding="utf-8") as f:
-    for programme in tv:
-        start = programme.attrib["start"]
-        channel = programme.attrib["channel"]
-        title = programme.find("title").text
-        f.write(f'<programme start="{start}" channel="{channel}"><title>{title}</title></programme>\n')
+    f.write('<?xml version="1.0" encoding="UTF-8"?>\n')
+    for element in tv:
+        f.write(ET.tostring(element, encoding="unicode").strip() + "\n")
 
 print("EPG berhasil disimpan ke epg.xml!")
