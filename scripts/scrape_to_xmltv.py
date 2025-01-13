@@ -1,9 +1,9 @@
 import requests
 from bs4 import BeautifulSoup
 import xml.etree.ElementTree as ET
-from datetime import datetime, timedelta
+from datetime import datetime
 
-# URL target
+# URL target yang diperbarui
 url = "https://epg.pw/areas/id/epg.html?lang=en&timezone=QXNpYS9KYWthcnRh"
 
 # Mengambil data dari URL
@@ -38,6 +38,17 @@ if table:
 
 # Membuat struktur XMLTV
 tv = ET.Element("tv")
+
+# Menambahkan channel ke dalam XML dengan URL yang diperbarui
+channel_id = "ZhejiangSatelliteTV.cn"  # ID channel yang digunakan
+channel = ET.SubElement(tv, "channel", id=channel_id)
+display_name = ET.SubElement(channel, "display-name")
+display_name.text = "Zhejiang Satellite TV"
+icon = ET.SubElement(channel, "icon", src="https://i.imgur.com/NFFQNhq.png")
+url = ET.SubElement(channel, "url")
+url.text = "https://epg.pw/areas/id/epg.html?lang=en&timezone=QXNpYS9KYWthcnRh"  # URL yang diperbarui
+
+# Menambahkan program-program
 for i, program in enumerate(programs):
     # Menggunakan format waktu yang telah diperbarui (jika perlu)
     try:
@@ -59,17 +70,19 @@ for i, program in enumerate(programs):
         # Jika ini adalah program terakhir, set waktu stop ke waktu yang sama
         stop_str = start_str
 
-    channel = ET.SubElement(tv, "programme", start=start_str, stop=stop_str, channel=program["channel"])
-    title = ET.SubElement(channel, "title")
+    # Menambahkan elemen programme dengan channel yang sesuai
+    programme = ET.SubElement(tv, "programme", start=start_str, stop=stop_str, channel=channel_id)
+    title = ET.SubElement(programme, "title", lang="en")
     title.text = program["title"]
 
 # Menyimpan ke file XML dalam satu baris per elemen
 with open("epg.xml", "w", encoding="utf-8") as f:
     for programme in tv:
-        start = programme.attrib["start"]
-        stop = programme.attrib["stop"]
-        channel = programme.attrib["channel"]
-        title = programme.find("title").text
-        f.write(f'<programme start="{start}" stop="{stop}" channel="{channel}"><title>{title}</title></programme>\n')
+        if programme.tag == "programme":
+            start = programme.attrib["start"]
+            stop = programme.attrib["stop"]
+            channel = programme.attrib["channel"]
+            title = programme.find("title").text
+            f.write(f'<programme start="{start}" stop="{stop}" channel="{channel}"><title lang="en">{title}</title></programme>\n')
 
 print("EPG berhasil disimpan ke epg.xml!")
