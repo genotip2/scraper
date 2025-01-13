@@ -1,7 +1,7 @@
 import requests
 from bs4 import BeautifulSoup
 import xml.etree.ElementTree as ET
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # URL target
 url = "https://epg.pw/areas/id/epg.html?lang=en&timezone=QXNpYS9KYWthcnRh"
@@ -13,24 +13,37 @@ headers = {
 response = requests.get(url, headers=headers)
 soup = BeautifulSoup(response.text, 'html.parser')
 
+# Asumsi tanggal awal adalah tanggal hari ini
+current_date = datetime.now().date()
+
 # Parsing data dari tabel
 programs = []
 channels = {}  # Menyimpan informasi channel
 table = soup.find("table", class_="table is-bordered is-striped")
+
 if table:
+    last_time = None  # Waktu program sebelumnya
     for row in table.find_all("tr"):
         cells = row.find_all("td")
         if len(cells) > 1:  # Setiap baris memiliki beberapa kolom
             channel_name = cells[0].text.strip()
             channel_id = channel_name.replace(" ", "")  # Channel id tanpa spasi
+            
             for cell in cells[1:]:
                 time_tag = cell.find("span", class_="tag is-primary")
                 title = cell.get_text(strip=True).replace(time_tag.text.strip(), "") if time_tag else ""
                 time = time_tag.text.strip() if time_tag else ""
                 
-                # Menambahkan tanggal jika waktu hanya berupa jam dan menit
-                if time and len(time) == 5:  # Format waktu seperti HH:MM
-                    time = f"2025-01-12 {time}"  # Tambahkan tanggal
+                if time:
+                    # Deteksi perubahan hari berdasarkan waktu
+                    program_time = datetime.strptime(time, "%H:%M").time()
+                    if last_time and program_time < last_time:
+                        # Jika waktu lebih kecil dari program sebelumnya, ganti ke hari berikutnya
+                        current_date += timedelta(days=1)
+                    last_time = program_time  # Perbarui waktu terakhir
+
+                    # Gabungkan tanggal dan waktu
+                    time = datetime.combine(current_date, program_time).strftime("%Y-%m-%d %H:%M")
 
                 programs.append({
                     "channel": channel_name,
@@ -63,8 +76,7 @@ for i, program in enumerate(programs):
         start_time = datetime.strptime(program["time"], "%Y-%m-%d %H:%M")
         start_str = start_time.strftime("%Y%m%d%H%M%S +0000")
     except ValueError:
-        # Jika tidak ada tanggal di waktu
-        start_str = f"20250112{program['time'].replace(':', '')}00 +0000"  # Asumsi tanggal default
+        start_str = f"20250112{program['time'].replace(':', '')}00 +0000"
 
     # Menentukan waktu stop untuk program berikutnya
     if i < len(programs) - 1:
