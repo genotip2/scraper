@@ -1,90 +1,123 @@
 import requests
 from bs4 import BeautifulSoup
-import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
+import pytz
+import xml.etree.ElementTree as ET
 
-# URL target
-url = "https://www.mncvision.id/schedule/formSearch"
+BASE_URL = "https://www.mncvision.id/schedule/table"
+TIMEZONE = "Asia/Jakarta"
 
-# Tanggal hari ini
-today_date = datetime.now().strftime('%Y-%m-%d')
+def get_channels():
+    url = "https://www.mncvision.id/schedule"
+    response = requests.get(url)
+    response.raise_for_status()
+    soup = BeautifulSoup(response.text, "html.parser")
+    
+    channels = []
+    options = soup.select('select[name="fchannel"] option')
+    for option in options:
+        site_id = option.get("value")
+        name = option.text.split(" - ")[0].strip()
+        if site_id:
+            channels.append({"site_id": site_id, "name": name})
+    return channels
 
-# Header untuk menghindari blokir
-headers = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-}
-
-# Data POST
-data = {
-    "fdate": today_date,
-    "submit": "Submit"
-}
-
-# Kirim permintaan POST
-response = requests.post(url, headers=headers, data=data)
-soup = BeautifulSoup(response.text, 'html.parser')
-
-# Parsing data jadwal
-programs = []
-channels = {}
-schedule_items = soup.find_all("div", class_="schedule-item")  # Sesuaikan selector ini dengan struktur halaman
-
-if schedule_items:
-    for item in schedule_items:
-        # Ambil informasi channel, waktu, judul, dan sinopsis
-        channel_name = "MNC Vision"  # Sesuaikan jika channel ada di halaman
-        channel_id = channel_name.replace(" ", "")
-        time = item.find("span", class_="time").text.strip() if item.find("span", class_="time") else None
-        title = item.find("h3").text.strip() if item.find("h3") else "No Title"
-        synopsis = item.find("p", class_="synopsis").text.strip() if item.find("p", class_="synopsis") else "No Synopsis"
-
-        if time:
-            # Ubah waktu ke format lengkap
-            start_time = datetime.strptime(f"{today_date} {time}", "%Y-%m-%d %H:%M")
-            start_time_str = start_time.strftime("%Y%m%d%H%M%S +0000")
-        else:
-            continue
-
+def get_epg(channel_id, date):
+    form_data = {
+        "search_model": "channel",
+        "af0rmelement": "aformelement",
+        "fdate": date.strftime("%Y-%m-%d"),
+        "fchannel": channel_id,
+        "submit": "Search"
+    }
+    headers = {"Content-Type": "application/x-www-form-urlencoded"}
+    response = requests.post(BASE_URL, data=form_data, headers=headers)
+    response.raise_for_status()
+    
+    soup = BeautifulSoup(response.text, "html.parser")
+    items = soup.select('tr[valign="top"]')
+    
+    programs = []
+    for item in items:
+        start = parse_start(item, date)
+        duration = parse_duration(item)
+        stop = start + timedelta(minutes=duration)
         programs.append({
-            "channel": channel_name,
-            "channel_id": channel_id,
-            "start": start_time_str,
-            "title": title,
-            "synopsis": synopsis
+            "title": parse_title(item),
+            "description": parse_description(item),
+            "start": start,
+            "stop": stop
         })
+    return programs
 
-        # Tambahkan channel jika belum ada
-        if channel_id not in channels:
-            channels[channel_id] = {"display_name": channel_name, "icon": ""}
+def parse_start(item, date):
+    time_str = item.select_one('td:nth-child(1)').text.strip()
+    datetime_str = f"{date.strftime('%d/%m/%Y')} {time_str}"
+    local_tz = pytz.timezone(TIMEZONE)
+    start_time = local_tz.localize(datetime.strptime(datetime_str, "%d/%m/%Y %H:%M"))
+    return start_time
 
-# Membuat struktur XMLTV
-tv = ET.Element("tv")
+def parse_duration(item):
+    duration_text = item.select_one('td:nth-child(3)').text.strip()
+    hours, minutes = map(int, duration_text.split(":"))
+    return hours * 60 + minutes
 
-# Tambahkan elemen <channel>
-for channel_id, channel_info in channels.items():
-    channel = ET.SubElement(tv, "channel", id=channel_id)
-    display_name = ET.SubElement(channel, "display-name")
-    display_name.text = channel_info["display_name"]
-    icon = ET.SubElement(channel, "icon", src=channel_info["icon"])
+def parse_title(item):
+    return item.select_one('td:nth-child(2) > a').text.strip()
 
-# Tambahkan elemen <programme>
-for program in programs:
-    programme = ET.SubElement(
-        tv,
-        "programme",
-        start=program["start"],
-        stop="",
-        channel=program["channel_id"],
-    )
-    title = ET.SubElement(programme, "title", lang="en")
-    title.text = program["title"]
-    desc = ET.SubElement(programme, "desc", lang="en")
-    desc.text = program["synopsis"]
+def parse_description(item):
+    link = item.select_one('td:nth-child(2) > a').get("href")
+    if not link:
+        return None
+    response = requests.get(link)
+    response.raise_for_status()
+    soup = BeautifulSoup(response.text, "html.parser")
+    description = soup.select_one(".synopsis").text.strip()
+    return description if description != "-" else None
 
-# Simpan ke file XML
-tree = ET.ElementTree(tv)
-with open("epg_vision.xml", "wb") as f:
-    f.write(b'<?xml version="1.0" encoding="UTF-8"?>\n')
-    tree.write(f, encoding="utf-8", xml_declaration=False)
+def generate_xmltv(channels, epg_data, output_file="epg_vision.xml"):
+    # Buat elemen root
+    root = ET.Element("tv")
+    root.set("generator-info-name", "EPG Scraper")
+    root.set("generator-info-url", "https://www.mncvision.id")
 
-print("EPG berhasil disimpan ke epg_vision.xml!")
+    # Tambahkan saluran
+    for channel in channels:
+        channel_element = ET.SubElement(root, "channel", id=channel["site_id"])
+        display_name = ET.SubElement(channel_element, "display-name")
+        display_name.text = channel["name"]
+
+    # Tambahkan program
+    for channel_id, programs in epg_data.items():
+        for program in programs:
+            programme_element = ET.SubElement(
+                root, "programme",
+                start=program["start"].strftime("%Y%m%d%H%M%S %z"),
+                stop=program["stop"].strftime("%Y%m%d%H%M%S %z"),
+                channel=channel_id
+            )
+            title = ET.SubElement(programme_element, "title")
+            title.text = program["title"]
+            desc = ET.SubElement(programme_element, "desc")
+            desc.text = program["description"] or "No description available"
+
+    # Tulis file XML
+    tree = ET.ElementTree(root)
+    with open(output_file, "wb") as f:
+        f.write(b'<?xml version="1.0" encoding="UTF-8"?>\n')
+        tree.write(f, encoding="utf-8", xml_declaration=False)
+
+if __name__ == "__main__":
+    # Ambil saluran
+    channels = get_channels()
+    print("Fetching channels and EPG data...")
+    
+    # Ambil EPG untuk setiap saluran untuk hari ini
+    today = datetime.now(pytz.timezone(TIMEZONE)).date()
+    epg_data = {}
+    for channel in channels[:5]:  # Ambil 5 saluran pertama (bisa diubah sesuai kebutuhan)
+        epg_data[channel["site_id"]] = get_epg(channel["site_id"], today)
+    
+    # Hasilkan file XMLTV
+    generate_xmltv(channels, epg_data, output_file="epg_vision.xml")
+    print("EPG saved to epg_vision.xml")
