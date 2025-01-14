@@ -1,35 +1,32 @@
-name: Scrape Vision
+name: EPG Scraper
 
 on:
-  schedule:
-    - cron: "0 0 * * *"  # Jalankan setiap hari pada pukul 00:00 UTC
   workflow_dispatch:
+  schedule:
+    - cron: "0 0 * * *"
 
 jobs:
-  build:
+  scrape-epg:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: 3.9
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
 
-    - name: Install dependencies
-      run: |
-        pip install requests beautifulsoup4 lxml
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
 
-    - name: Run scraping script
-      run: |
-        python scripts/scrape_vision.py
+      - name: Run scraper
+        run: python scrape_vision.py
 
-    - name: Commit and push changes
-      run: |
-        git config --local user.name "github-actions[bot]"
-        git config --local user.email "github-actions[bot]@users.noreply.github.com"
-        git add epg_vision.xml
-        git commit -m "Scrape Vision"
-        git push
+      - name: Upload EPG
+        uses: actions/upload-artifact@v3
+        with:
+          name: epg_vision
+          path: epg_vision.xml
