@@ -1,168 +1,85 @@
-import requests
-import json
-import base64
-import re
 import os
-import datetime
+import requests
 from bs4 import BeautifulSoup
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.retry import Retry
+from datetime import datetime
 
-# Base URL dari situs streaming (Ganti sesuai situs target)
-BASE_URL = "http://198.54.124.245"
-
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
-    "Referer": BASE_URL
+# 🔧 Konfigurasi URL situs yang dapat diubah
+CONFIG = {
+    "BASE_URL": "https://rebahinxxi.me/",  # Ganti jika URL berubah
+    "M3U_FILE": "movies_playlist.m3u",
 }
 
-# Tahun otomatis (tahun ini & tahun lalu)
-current_year = datetime.datetime.now().year
-last_year = current_year - 1
-ALLOWED_YEARS = [str(current_year), str(last_year)]
+# 📆 Tentukan tahun yang diambil (tahun ini & tahun lalu)
+CURRENT_YEAR = datetime.now().year
+LAST_YEAR = CURRENT_YEAR - 1
 
-# Kata kunci yang menandakan kualitas CAM (harus dihindari)
-CAM_KEYWORDS = ["CAM", "HDCAM", "TS", "Telesync"]
+# 🔄 Buat sesi dengan retry otomatis
+session = requests.Session()
+retries = Retry(total=5, backoff_factor=5, status_forcelist=[500, 502, 503, 504])
+session.mount("http://", HTTPAdapter(max_retries=retries))
+session.mount("https://", HTTPAdapter(max_retries=retries))
 
-# Path file M3U output
-M3U_FILE = "output/movies.m3u"
 
-# Fungsi untuk membaca daftar film yang sudah ada di M3U
 def load_existing_movies():
-    if not os.path.exists(M3U_FILE):
-        return set()  # Jika file tidak ada, kembalikan set kosong
-
+    """Memuat daftar film yang sudah ada dalam file M3U."""
     existing_movies = set()
-    with open(M3U_FILE, "r", encoding="utf-8") as f:
-        for line in f:
-            if line.startswith("#EXTINF"):
-                title = line.split(",")[-1].strip()
-                existing_movies.add(title)
+    if os.path.exists(CONFIG["M3U_FILE"]):
+        with open(CONFIG["M3U_FILE"], "r", encoding="utf-8") as f:
+            for line in f:
+                if line.startswith("#EXTINF"):
+                    title = line.split(",")[-1].strip()
+                    existing_movies.add(title)
     return existing_movies
 
-# Fungsi untuk mendapatkan daftar kategori dari website
-def get_categories():
-    url = f"{BASE_URL}"
-    response = requests.get(url, headers=HEADERS)
-    if response.status_code != 200:
-        print("Error: Tidak bisa mengakses halaman utama.")
-        return []
 
-    soup = BeautifulSoup(response.text, "html.parser")
-    categories = []
-
-    # Mencari kategori film di menu atau sidebar
-    for link in soup.find_all("a", href=True):
-        href = link["href"]
-        text = link.text.strip()
-        if "/category/" in href:
-            category_name = href.split("/category/")[-1].strip("/")
-            categories.append((category_name, href))
-
-    return categories
-
-# Fungsi untuk mendapatkan daftar film dari kategori tertentu
-def get_movies_from_category(category_url, category_name, existing_movies):
-    response = requests.get(category_url, headers=HEADERS)
-    if response.status_code != 200:
-        print(f"Error: Tidak bisa mengakses {category_url}")
-        return []
-
+def get_movie_list():
+    """Scraping daftar film dari website."""
+    url = CONFIG["BASE_URL"]
+    print(f"📡 Mengambil daftar film dari {url}...")
+    
+    response = session.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+    response.raise_for_status()
+    
     soup = BeautifulSoup(response.text, "html.parser")
     movies = []
+    
+    # Sesuaikan dengan struktur HTML website
+    for item in soup.select(".ml-item"):
+        title = item.select_one(".mli-info h2").text.strip()
+        
+        # Ekstrak tahun dari judul, jika tidak ada anggap tahun terbaru
+        try:
+            year = int(title.split()[-1])
+        except ValueError:
+            year = CURRENT_YEAR
 
-    for post in soup.find_all("article"):
-        title_tag = post.find("h2", class_="post-title")
-        link_tag = title_tag.find("a") if title_tag else None
-        title = link_tag.text.strip() if link_tag else "Tidak ada judul"
-        movie_url = link_tag["href"] if link_tag else None
-
-        # Ambil informasi tambahan
-        details = post.find("div", class_="post-content")
-        details_text = details.text.strip() if details else ""
-
-        # Periksa apakah film termasuk dalam tahun yang diizinkan
-        if any(year in title or year in details_text for year in ALLOWED_YEARS):
-            # Pastikan bukan film kualitas CAM
-            if not any(cam_word.lower() in title.lower() or cam_word.lower() in details_text.lower() for cam_word in CAM_KEYWORDS):
-                # Hanya tambahkan jika belum ada dalam daftar
-                if title not in existing_movies:
-                    movie = {
-                        "title": title,
-                        "url": movie_url,
-                        "category": category_name,
-                        "details": details_text
-                    }
-                    movies.append(movie)
-
+        link = item.select_one("a")["href"]
+        category = item.select_one(".jt-info i").text.strip()  # Kategori film
+        
+        # ✅ Hanya ambil film dari tahun ini & tahun lalu
+        if year in {CURRENT_YEAR, LAST_YEAR}:
+            movies.append({"title": title, "link": link, "category": category})
+    
     return movies
 
-# Fungsi untuk mendapatkan URL streaming dari halaman film
-def get_stream_url(movie_url):
-    response = requests.get(movie_url, headers=HEADERS)
-    if response.status_code != 200:
-        return None
 
-    soup = BeautifulSoup(response.text, "html.parser")
-    iframe = soup.find("iframe")
-
-    if iframe:
-        iframe_src = iframe["src"]
-        if "base64" in iframe_src:
-            try:
-                decoded_url = base64.b64decode(iframe_src.split(",")[1]).decode("utf-8")
-                return decoded_url
-            except Exception:
-                return None
-        return iframe_src
-    return None
-
-# Fungsi untuk menyimpan data ke file M3U
-def save_to_m3u(movies):
-    os.makedirs("output", exist_ok=True)  # Buat folder output jika belum ada
-
-    mode = "a" if os.path.exists(M3U_FILE) else "w"
-
-    with open(M3U_FILE, mode, encoding="utf-8") as f:
-        if mode == "w":
-            f.write("#EXTM3U\n")  # Tambahkan header jika file baru
-
+def save_to_m3u(movies, existing_movies):
+    """Simpan daftar film ke dalam file M3U dengan kategori sebagai grup."""
+    with open(CONFIG["M3U_FILE"], "a", encoding="utf-8") as f:
         for movie in movies:
-            if movie["stream_url"]:
-                f.write(f"#EXTINF:-1 tvg-group=\"{movie['category']}\",{movie['title']}\n{movie['stream_url']}\n")
+            if movie["title"] not in existing_movies:
+                f.write(f'#EXTINF:-1 tvg-group="{movie["category"]}",{movie["title"]}\n')
+                f.write(f"{movie['link']}\n")
+    print("✅ File M3U diperbarui!")
 
-    print(f"✅ Film baru ditambahkan ke file: {M3U_FILE}")
 
-# Fungsi utama
 def main():
-    print("🔍 Memuat daftar film yang sudah ada...")
     existing_movies = load_existing_movies()
-    print(f"📂 {len(existing_movies)} film sudah ada dalam daftar.")
+    movies = get_movie_list()
+    save_to_m3u(movies, existing_movies)
 
-    print("🔍 Mengambil daftar kategori dari website...")
-    categories = get_categories()
-    if not categories:
-        print("❌ Tidak ada kategori yang ditemukan.")
-        return
-
-    all_movies = []
-
-    for category_name, category_url in categories:
-        print(f"📂 Mengambil film dari kategori: {category_name}")
-        movies = get_movies_from_category(category_url, category_name, existing_movies)
-        if movies:
-            # Ambil URL streaming untuk setiap film
-            for movie in movies:
-                stream_url = get_stream_url(movie["url"]) if movie["url"] else None
-                movie["stream_url"] = stream_url
-
-            all_movies.extend(movies)
-
-    if not all_movies:
-        print("❌ Tidak ada film baru yang ditemukan.")
-        return
-
-    print("💾 Menyimpan film baru ke file M3U...")
-    save_to_m3u(all_movies)
-    print("🎉 Selesai!")
 
 if __name__ == "__main__":
     main()
