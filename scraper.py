@@ -1,85 +1,72 @@
-import os
-import requests
+from turtle import title
 from bs4 import BeautifulSoup
-from requests.adapters import HTTPAdapter
-from requests.packages.urllib3.util.retry import Retry
-from datetime import datetime
+import requests
+from urllib.parse import urljoin
+import base64
+import re
 
-# 🔧 Konfigurasi URL situs yang dapat diubah
-CONFIG = {
-    "BASE_URL": "https://rebahinxxi.me/",  # Ganti jika URL berubah
-    "M3U_FILE": "movies_playlist.m3u",
-}
+base_url = "http://179.43.163.54/movies/"
+referer_header = "http://179.43.163.54/"
 
-# 📆 Tentukan tahun yang diambil (tahun ini & tahun lalu)
-CURRENT_YEAR = datetime.now().year
-LAST_YEAR = CURRENT_YEAR - 1
+def save_to_playlist(title, quality, img_src, file_link):
+    with open("output_playlist.txt", "a", encoding="utf-8") as f:
+        f.write(f"#KODIPROP:inputstream.adaptive.stream_headers=Referer=http://172.96.161.72/\n")
+        f.write(f"#EXTINF:-1 type=\"movie\" group-title=\"Rebahin\" tvg-logo=\"{img_src}\",{title} {quality}\n{file_link}\n\n")
 
-# 🔄 Buat sesi dengan retry otomatis
-session = requests.Session()
-retries = Retry(total=5, backoff_factor=5, status_forcelist=[500, 502, 503, 504])
-session.mount("http://", HTTPAdapter(max_retries=retries))
-session.mount("https://", HTTPAdapter(max_retries=retries))
+def get_movies_data(page_num):
+    try:
+        url = urljoin(base_url, f"page/{page_num}")
+        response = requests.get(url)
 
+        # Check if the request was successful (status code 200)
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.text, 'html.parser')
 
-def load_existing_movies():
-    """Memuat daftar film yang sudah ada dalam file M3U."""
-    existing_movies = set()
-    if os.path.exists(CONFIG["M3U_FILE"]):
-        with open(CONFIG["M3U_FILE"], "r", encoding="utf-8") as f:
-            for line in f:
-                if line.startswith("#EXTINF"):
-                    title = line.split(",")[-1].strip()
-                    existing_movies.add(title)
-    return existing_movies
+            # Find all movie items
+            movie_items = soup.find_all('div', class_='ml-item')
 
+            for movie_item in movie_items:
+                title = movie_item.find('h2').text.strip()
+                quality = movie_item.find('span', class_='mli-quality').text.strip()
+                href = movie_item.find('a')['href'].strip()
+                img_src = movie_item.find('img')['src'].strip()
 
-def get_movie_list():
-    """Scraping daftar film dari website."""
-    url = CONFIG["BASE_URL"]
-    print(f"📡 Mengambil daftar film dari {url}...")
-    
-    response = session.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
-    response.raise_for_status()
-    
-    soup = BeautifulSoup(response.text, "html.parser")
-    movies = []
-    
-    # Sesuaikan dengan struktur HTML website
-    for item in soup.select(".ml-item"):
-        title = item.select_one(".mli-info h2").text.strip()
-        
-        # Ekstrak tahun dari judul, jika tidak ada anggap tahun terbaru
-        try:
-            year = int(title.split()[-1])
-        except ValueError:
-            year = CURRENT_YEAR
+                # Construct the "play" path based on the href
+                play_path = urljoin(base_url, href) + "play/"
 
-        link = item.select_one("a")["href"]
-        category = item.select_one(".jt-info i").text.strip()  # Kategori film
-        
-        # ✅ Hanya ambil film dari tahun ini & tahun lalu
-        if year in {CURRENT_YEAR, LAST_YEAR}:
-            movies.append({"title": title, "link": link, "category": category})
-    
-    return movies
+                # Make a second request for the "play" path
+                play_response = requests.get(play_path)
+                if play_response.status_code == 200:
+                    # Extract the value of "data-iframe" from the first server
+                    soup_play = BeautifulSoup(play_response.text, 'html.parser')
+                    first_server = soup_play.find('div', class_='server server-active')
+                    data_iframe_value = first_server.get('data-iframe', '')
 
+                    # Decode base64
+                    decoded_url = base64.b64decode(data_iframe_value).decode('utf-8')
 
-def save_to_m3u(movies, existing_movies):
-    """Simpan daftar film ke dalam file M3U dengan kategori sebagai grup."""
-    with open(CONFIG["M3U_FILE"], "a", encoding="utf-8") as f:
-        for movie in movies:
-            if movie["title"] not in existing_movies:
-                f.write(f'#EXTINF:-1 tvg-group="{movie["category"]}",{movie["title"]}\n')
-                f.write(f"{movie['link']}\n")
-    print("✅ File M3U diperbarui!")
+                    # Make a third request using the decoded URL and Referer header
+                    headers = {'Referer': referer_header}
+                    third_response = requests.get(decoded_url, headers=headers)
+                    if third_response.status_code == 200:
+                        # Parse the content of the third response to extract the "file" link
+                        match = re.search(r'"file":\s*"(.*?)"', third_response.text)
+                        if match:
+                            file_link = match.group(1)
+                            save_to_playlist(title, quality, img_src, file_link)
+                            print(f"Added: {title}")
+                        else:
+                            print("File link not found in the response.")
 
+                else:
+                    print(f"Error making second request: {play_response.status_code} - {play_response.text}")
 
-def main():
-    existing_movies = load_existing_movies()
-    movies = get_movie_list()
-    save_to_m3u(movies, existing_movies)
-
+        else:
+            print(f"Error: {response.status_code} - {response.text}")
+    except Exception as e:
+        print(f"An error occurred: {e}")
 
 if __name__ == "__main__":
-    main()
+    for page_num in range(1, 591):
+        print(f"Scraping page {page_num}")
+        get_movies_data(page_num)
