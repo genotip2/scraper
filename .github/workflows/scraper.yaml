@@ -28,6 +28,6 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add output/movies.m3u
+          git add output_playlist.txt
           git commit -m "Update M3U file (automated)" || echo "No changes to commit"
           git push
